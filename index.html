@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PhoneGet PRO</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="app-container">
+        <header>
+            <div class="header-info">
+                <div class="avatar">🤖</div>
+                <div class="user-details">
+                    <h1>PhoneGet <span class="badge">PRO</span></h1>
+                    <p>Баланс: <span id="balance">0</span> ₽</p>
+                    <p class="income-text">Доход: +<span id="income">0</span> ₽/сек</p>
+                </div>
+            </div>
+        </header>
+
+        <nav class="tabs" aria-label="Разделы">
+            <button type="button" class="tab-btn active" data-tab="mining">⛏️ Майнинг</button>
+            <button type="button" class="tab-btn" data-tab="avito">🛒 Авито</button>
+            <button type="button" class="tab-btn" data-tab="cases">🎰 Кейсы</button>
+            <button type="button" class="tab-btn" data-tab="inventory">📦 Склад</button>
+        </nav>
+
+        <main>
+            <section id="mining" class="screen active">
+                <div class="clicker-area" id="clicker">
+                    <div class="main-phone">📱</div>
+                    <p>Тапай по экрану!</p>
+                </div>
+
+                <section class="panel">
+                    <div class="panel-row">
+                        <button type="button" class="action-btn" id="daily-btn">🎁 Ежедневный бонус</button>
+                        <div class="hint" id="daily-hint"></div>
+                    </div>
+
+                    <h2 class="panel-title">Улучшения</h2>
+                    <div id="upgrades-list" class="upgrades-list"></div>
+                </section>
+            </section>
+
+            <section id="avito" class="screen hidden">
+                <h2>Свежие объявления</h2>
+                <div id="market-list" class="grid-list"></div>
+            </section>
+
+            <section id="cases" class="screen hidden">
+                <h2>Кейсы</h2>
+                <section class="panel">
+                    <p class="hint">
+                        Шансы: обычный 70%, редкий 25%, легендарный 5%.
+                    </p>
+                    <div class="panel-row">
+                        <button type="button" class="action-btn" id="open-case-btn">Открыть кейс</button>
+                        <div class="hint" id="case-cost-hint"></div>
+                    </div>
+                    <div class="roulette" id="roulette" aria-label="Рулетка кейса" role="group">
+                        <div class="roulette-window" aria-hidden="true"></div>
+                        <div class="roulette-track" id="roulette-track"></div>
+                    </div>
+                    <div id="case-result" class="case-result" aria-live="polite"></div>
+                </section>
+            </section>
+
+            <section id="inventory" class="screen hidden">
+                <h2>Ваши фермы</h2>
+                <div id="inventory-list" class="grid-list"></div>
+            </section>
+        </main>
+    </div>
+    <script src="script.js"></script>
+</body>
+</html>
