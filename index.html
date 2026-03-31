@@ -7,68 +7,90 @@
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
+    <div id="weather-layer" class="weather-layer" aria-hidden="true"></div>
     <div class="app-container">
         <header>
             <div class="header-info">
                 <div class="avatar">🤖</div>
                 <div class="user-details">
                     <h1>PhoneGet <span class="badge">PRO</span></h1>
-                    <p>Баланс: <span id="balance">0</span> ₽</p>
-                    <p class="income-text">Доход: +<span id="income">0</span> ₽/сек</p>
+                    <p><span data-i18n="balanceLabel">Баланс</span>: <span id="balance">0</span> ₽</p>
+                    <p class="income-text"><span data-i18n="incomeLabel">Доход</span>: +<span id="income">0</span> ₽/<span data-i18n="perSecond">сек</span></p>
+                </div>
+                <div class="lang-switch">
+                    <select id="lang-select" class="lang-select" aria-label="Language">
+                        <option value="ru">RU</option>
+                        <option value="en">EN</option>
+                    </select>
                 </div>
             </div>
         </header>
 
         <nav class="tabs" aria-label="Разделы">
-            <button type="button" class="tab-btn active" data-tab="mining">⛏️ Майнинг</button>
-            <button type="button" class="tab-btn" data-tab="avito">🛒 Авито</button>
-            <button type="button" class="tab-btn" data-tab="cases">🎰 Кейсы</button>
-            <button type="button" class="tab-btn" data-tab="inventory">📦 Склад</button>
+            <button type="button" class="tab-btn active" data-tab="mining" data-i18n="tabMining">⛏️ Майнинг</button>
+            <button type="button" class="tab-btn" data-tab="avito" data-i18n="tabMarket">🛒 Авито</button>
+            <button type="button" class="tab-btn" data-tab="cases" data-i18n="tabCases">🎰 Кейсы</button>
+            <button type="button" class="tab-btn" data-tab="inventory" data-i18n="tabInventory">📦 Склад</button>
         </nav>
 
         <main>
             <section id="mining" class="screen active">
                 <div class="clicker-area" id="clicker">
                     <div class="main-phone">📱</div>
-                    <p>Тапай по экрану!</p>
+                    <p data-i18n="tapHint">Ожидай автоматический дроп!</p>
                 </div>
 
                 <section class="panel">
                     <div class="panel-row">
-                        <button type="button" class="action-btn" id="daily-btn">🎁 Ежедневный бонус</button>
+                        <div class="hint" id="auto-drop-timer">Следующий телефон через: 03:00</div>
+                    </div>
+                    <div class="case-result" id="auto-drop-card" aria-live="polite">
+                        <div class="case-empty" id="auto-drop-text">Жди 3 минуты, чтобы получить новый телефон.</div>
+                        <button type="button" class="action-btn" id="claim-drop-btn" data-i18n="openCaseBtn">Забрать</button>
+                    </div>
+                    <div class="panel-row">
+                        <button type="button" class="action-btn" id="daily-btn" data-i18n="dailyBtn">🎁 Ежедневный бонус</button>
                         <div class="hint" id="daily-hint"></div>
                     </div>
 
-                    <h2 class="panel-title">Улучшения</h2>
+                    <h2 class="panel-title" data-i18n="themeLabel">Тема оформления</h2>
+                    <div class="panel-row">
+                        <select id="theme-select" class="lang-select" aria-label="Theme">
+                            <option value="light" data-i18n="theme_light">Светлая</option>
+                            <option value="dark" data-i18n="theme_dark">Тёмная</option>
+                            <option value="red" data-i18n="theme_red">Красная</option>
+                            <option value="green" data-i18n="theme_green">Зелёная</option>
+                            <option value="blue" data-i18n="theme_blue">Синяя</option>
+                        </select>
+                    </div>
+
+                    <h2 class="panel-title" data-i18n="upgradesTitle">Улучшения</h2>
                     <div id="upgrades-list" class="upgrades-list"></div>
                 </section>
             </section>
 
             <section id="avito" class="screen hidden">
-                <h2>Свежие объявления</h2>
+                <h2 data-i18n="marketTitle">Свежие объявления</h2>
                 <div id="market-list" class="grid-list"></div>
             </section>
 
             <section id="cases" class="screen hidden">
-                <h2>Кейсы</h2>
+                <h2 data-i18n="casesTitle">Кейсы</h2>
                 <section class="panel">
-                    <p class="hint">
-                        Шансы: обычный 70%, редкий 25%, легендарный 5%.
-                    </p>
+                    <p class="hint" data-i18n="casesOddsHint">Шансы: обычный 70%, редкий 25%, легендарный 5%.</p>
                     <div class="panel-row">
-                        <button type="button" class="action-btn" id="open-case-btn">Открыть кейс</button>
+                        <button type="button" class="action-btn" id="open-case-btn" data-i18n="openCaseBtn">Открыть кейс</button>
                         <div class="hint" id="case-cost-hint"></div>
                     </div>
                     <div class="roulette" id="roulette" aria-label="Рулетка кейса" role="group">
                         <div class="roulette-window" aria-hidden="true"></div>
                         <div class="roulette-track" id="roulette-track"></div>
                     </div>
-                    <div id="case-result" class="case-result" aria-live="polite"></div>
                 </section>
             </section>
 
             <section id="inventory" class="screen hidden">
-                <h2>Ваши фермы</h2>
+                <h2 data-i18n="inventoryTitle">Ваши фермы</h2>
                 <div id="inventory-list" class="grid-list"></div>
             </section>
         </main>

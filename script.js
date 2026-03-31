@@ -1,6 +1,6 @@
 // --- ИГРОВЫЕ ДАННЫЕ (СОХРАНЕНИЯ) ---
 const SAVE_KEY = 'phoneGetSave';
-const SAVE_VERSION = 4;
+const SAVE_VERSION = 5;
 
 function loadGame() {
     try {
@@ -16,10 +16,10 @@ function defaultGameData() {
     return {
         v: SAVE_VERSION,
         balance: 0,
-        clickPower: 1, // base tap value (upgrades add on top)
-        // inventory: [{ id: number, qty: number }]
+        // инвентарь: [{ id: number, qty: number }]
         inventory: [],
         upgrades: {
+            // апгрейды кликов больше не используются, но оставляем для совместимости
             clickPowerLevel: 0,
             critLevel: 0,
             autoTapLevel: 0
@@ -28,7 +28,13 @@ function defaultGameData() {
         marketEvent: null,
         stats: {
             casesOpened: 0
-        }
+        },
+        // тема оформления
+        theme: 'light',
+        // gacha-таймер: следующее время дропа телефона
+        nextAutoDropAt: Date.now() + 3 * 60 * 1000,
+        // отложенная награда (кейс уже "заряжен", ждёт нажатия «Забрать»)
+        pendingDrop: null
     };
 }
 
@@ -82,6 +88,15 @@ function migrateSave(save) {
         casesOpened: Math.max(0, Math.floor(Number(stats.casesOpened) || 0))
     };
 
+    const theme = typeof save.theme === 'string' ? save.theme : 'light';
+    const nextAutoDropAt = Number(save.nextAutoDropAt) || (Date.now() + 3 * 60 * 1000);
+    const pendingDrop = (save.pendingDrop && typeof save.pendingDrop === 'object')
+        ? {
+            id: Number(save.pendingDrop.id) || null,
+            rarity: save.pendingDrop.rarity || null
+        }
+        : null;
+
     return {
         v: SAVE_VERSION,
         balance: Number(save.balance) || 0,
@@ -90,58 +105,362 @@ function migrateSave(save) {
         upgrades: normalizedUpgrades,
         lastDailyClaimTs,
         marketEvent,
-        stats: normalizedStats
+        stats: normalizedStats,
+        theme,
+        nextAutoDropAt,
+        pendingDrop
     };
 }
 
 let gameData = migrateSave(loadGame()) || defaultGameData();
 
-// База данных всех телефонов (можно расширять до бесконечности)
+// --- LANGUAGE / I18N ---
+const LANG_KEY = 'phoneGetLang';
+const i18n = {
+    ru: {
+        balanceLabel: 'Баланс',
+        incomeLabel: 'Доход',
+        perSecond: 'сек',
+        tabMining: '⛏️ Майнинг',
+        tabMarket: '🛒 Авито',
+        tabCases: '🎰 Кейсы',
+        tabInventory: '📦 Склад',
+        tapHint: 'Тапай по экрану!',
+        dailyBtn: '🎁 Ежедневный бонус',
+        upgradesTitle: 'Улучшения',
+        marketTitle: 'Свежие объявления',
+        casesTitle: 'Кейсы',
+        casesOddsHint: 'Каждые 3 минуты выпадает случайный телефон (Gacha).',
+        openCaseBtn: 'Забрать',
+        dailyAvailable: (amt) => `Доступно: +${amt} ₽`,
+        dailyIn: (tLeft) => `Можно через ${tLeft}`,
+        notEnough: 'Не хватает рублей!',
+        sell: (amt) => `Продать (${amt} ₽)`,
+        rarity_common: 'обычный',
+        rarity_rare: 'редкий',
+        rarity_epic: 'эпический',
+        rarity_legendary: 'легендарный',
+        rarity_secret: 'секретный',
+        caseIntro: 'Жди 3 минуты, чтобы получить новый телефон.',
+        caseFailed: 'Не удалось открыть кейс. Попробуй ещё раз.',
+        casePrice: (amt) => `Цена кейса: ${amt} ₽`,
+        caseWin: (name) => `Выпало: ${name}`,
+        caseRarityIncome: (rarity, income) => `Редкость: ${rarity} • +${income} ₽/сек`,
+        invEmpty: 'У вас пока нет ферм.',
+        invWorking: 'Работает',
+        marketUsed: 'Состояние',
+        incomeLine: (income) => `Доход: +${income} ₽/сек`,
+        farmIncomeLine: (income) => `Приносит: +${income} ₽/сек`,
+        autoDropTimer: (time) => `Следующий телефон через: ${time}`,
+        autoDropReady: 'Новый телефон готов! Нажми «Забрать».',
+        themeLabel: 'Тема оформления',
+        theme_light: 'Светлая',
+        theme_dark: 'Тёмная',
+        theme_red: 'Красная',
+        theme_green: 'Зелёная',
+        theme_blue: 'Синяя'
+    },
+    en: {
+        balanceLabel: 'Balance',
+        incomeLabel: 'Income',
+        perSecond: 's',
+        tabMining: '⛏️ Mining',
+        tabMarket: '🛒 Market',
+        tabCases: '🎰 Cases',
+        tabInventory: '📦 Storage',
+        tapHint: 'Tap the screen!',
+        dailyBtn: '🎁 Daily bonus',
+        upgradesTitle: 'Upgrades',
+        marketTitle: 'New listings',
+        casesTitle: 'Cases',
+        casesOddsHint: 'Every 3 minutes you get a free random phone (Gacha).',
+        openCaseBtn: 'Claim',
+        dailyAvailable: (amt) => `Available: +${amt} ₽`,
+        dailyIn: (tLeft) => `Ready in ${tLeft}`,
+        notEnough: 'Not enough money!',
+        sell: (amt) => `Sell (${amt} ₽)`,
+        rarity_common: 'common',
+        rarity_rare: 'rare',
+        rarity_epic: 'epic',
+        rarity_legendary: 'legendary',
+        rarity_secret: 'secret',
+        caseIntro: 'Wait 3 minutes to receive a new phone.',
+        caseFailed: 'Could not open the case. Try again.',
+        casePrice: (amt) => `Case cost: ${amt} ₽`,
+        caseWin: (name) => `You got: ${name}`,
+        caseRarityIncome: (rarity, income) => `Rarity: ${rarity} • +${income} ₽/s`,
+        invEmpty: 'No farms yet.',
+        invWorking: 'Running',
+        marketUsed: 'Condition',
+        incomeLine: (income) => `Income: +${income} ₽/s`,
+        farmIncomeLine: (income) => `Generates: +${income} ₽/s`,
+        autoDropTimer: (time) => `Next phone in: ${time}`,
+        autoDropReady: 'New phone is ready! Press “Claim”.',
+        themeLabel: 'Theme',
+        theme_light: 'Light',
+        theme_dark: 'Dark',
+        theme_red: 'Red',
+        theme_green: 'Green',
+        theme_blue: 'Blue'
+    }
+};
+
+function getLang() {
+    const stored = localStorage.getItem(LANG_KEY);
+    if (stored === 'ru' || stored === 'en') return stored;
+    return 'ru';
+}
+
+let currentLang = getLang();
+let numberFmt = new Intl.NumberFormat(currentLang === 'en' ? 'en-US' : 'ru-RU');
+
+function t(key, ...args) {
+    const dict = i18n[currentLang] || i18n.ru;
+    const v = dict[key];
+    if (typeof v === 'function') return v(...args);
+    return v ?? key;
+}
+
+function applyI18n() {
+    document.querySelectorAll('[data-i18n]').forEach(el => {
+        const k = el.getAttribute('data-i18n');
+        if (!k) return;
+        el.textContent = t(k);
+    });
+    const sel = document.getElementById('lang-select');
+    if (sel) sel.value = currentLang;
+    document.documentElement.lang = currentLang;
+}
+
+function setLang(lang) {
+    if (lang !== 'ru' && lang !== 'en') return;
+    currentLang = lang;
+    localStorage.setItem(LANG_KEY, lang);
+    numberFmt = new Intl.NumberFormat(lang === 'en' ? 'en-US' : 'ru-RU');
+    applyI18n();
+}
+
+// База данных всех телефонов / объявлений
+// Каждое объявление: { id, name, desc, price, income, rarity, icon, img }
 const phonesDB = [
+    // --- COMMON ---
     {
         id: 1,
-        name: "Nokia 3310",
+        name: 'Nokia 3310',
+        desc: 'Легендарная «неубиваемая». Состояние идеальное, батарея держит неделю.',
         price: 60,
         income: 1,
-        rarity: "common",
-        icon: "🧱",
-        img: "https://upload.wikimedia.org/wikipedia/commons/1/15/Nokia_3310_mobile_phone.jpg"
+        rarity: 'common',
+        icon: '🧱',
+        img: 'https://upload.wikimedia.org/wikipedia/commons/1/15/Nokia_3310_mobile_phone.jpg'
     },
     {
         id: 2,
-        name: "iPhone 4S",
-        price: 350,
-        income: 6,
-        rarity: "common",
-        icon: "📱",
-        img: "https://upload.wikimedia.org/wikipedia/commons/b/b5/Black_iPhone_4s.jpg"
+        name: 'Nokia 1100',
+        desc: 'Старая кнопочная, клавиатура стёрта, но всё ещё звонит.',
+        price: 40,
+        income: 1,
+        rarity: 'common',
+        icon: '📟',
+        img: 'https://upload.wikimedia.org/wikipedia/commons/2/28/Nokia_1100b.jpg'
     },
     {
         id: 3,
-        name: "Samsung S10",
-        price: 1800,
-        income: 28,
-        rarity: "rare",
-        icon: "🌌",
-        img: "https://upload.wikimedia.org/wikipedia/commons/7/71/Samsung_Galaxy_S10.png"
+        name: 'iPhone 4S',
+        desc: 'Экран с царапинами, батарея уставшая, iOS старая.',
+        price: 350,
+        income: 6,
+        rarity: 'common',
+        icon: '📱',
+        img: 'https://upload.wikimedia.org/wikipedia/commons/b/b5/Black_iPhone_4s.jpg'
     },
     {
         id: 4,
-        name: "iPhone 15 Pro",
-        price: 6500,
-        income: 110,
-        rarity: "rare",
-        icon: "🍎",
-        img: "https://upload.wikimedia.org/wikipedia/commons/c/ca/IPhone_15_Pro_%26_iPhone_15_Pro_Max.jpg"
+        name: 'iPhone 6',
+        desc: 'Корпус по краям побит, но Touch ID ещё работает.',
+        price: 500,
+        income: 9,
+        rarity: 'common',
+        icon: '📲',
+        img: 'https://upload.wikimedia.org/wikipedia/commons/f/f2/IPhone_6_silver_back.jpg'
     },
     {
         id: 5,
-        name: "Золотой Vertu",
+        name: 'Samsung Galaxy S7',
+        desc: 'Стекло с трещиной, но камера снимает отлично.',
+        price: 650,
+        income: 11,
+        rarity: 'common',
+        icon: '📷',
+        img: 'https://upload.wikimedia.org/wikipedia/commons/5/55/Samsung_Galaxy_S7_and_S7_Edge.png'
+    },
+    {
+        id: 6,
+        name: 'Google Pixel 2',
+        desc: 'Есть выгорание экрана, камера всё ещё топ за свои года.',
+        price: 700,
+        income: 12,
+        rarity: 'common',
+        icon: '📸',
+        img: 'https://upload.wikimedia.org/wikipedia/commons/1/1f/Google_Pixel_2_and_Pixel_2_XL.jpg'
+    },
+
+    // --- RARE ---
+    {
+        id: 100,
+        name: 'iPhone X',
+        desc: 'Первый безрамочный iPhone. Небольшие царапины на корпусе.',
+        price: 2000,
+        income: 28,
+        rarity: 'rare',
+        icon: '❌',
+        img: 'https://upload.wikimedia.org/wikipedia/commons/3/32/IPhone_X_vector.svg'
+    },
+    {
+        id: 101,
+        name: 'iPhone 11 Pro',
+        desc: 'Тройная камера, аккуратный владелец, комплект без наушников.',
+        price: 3200,
+        income: 40,
+        rarity: 'rare',
+        icon: '🍏',
+        img: 'https://upload.wikimedia.org/wikipedia/commons/0/0c/IPhone_11_Pro_vector.svg'
+    },
+    {
+        id: 102,
+        name: 'Samsung Galaxy S10',
+        desc: 'AMOLED без выгораний, всегда в чехле. Состояние отличное.',
+        price: 2600,
+        income: 32,
+        rarity: 'rare',
+        icon: '🌌',
+        img: 'https://upload.wikimedia.org/wikipedia/commons/7/71/Samsung_Galaxy_S10.png'
+    },
+    {
+        id: 103,
+        name: 'Samsung Galaxy Note 9',
+        desc: 'Стилус на месте, лёгкие следы эксплуатации.',
+        price: 2800,
+        income: 34,
+        rarity: 'rare',
+        icon: '✏️',
+        img: 'https://upload.wikimedia.org/wikipedia/commons/7/7c/Samsung_Galaxy_Note_9.png'
+    },
+    {
+        id: 104,
+        name: 'Google Pixel 5',
+        desc: 'Чистый Android, небольшой скол на рамке.',
+        price: 2900,
+        income: 36,
+        rarity: 'rare',
+        icon: '🟢',
+        img: 'https://upload.wikimedia.org/wikipedia/commons/6/6b/Pixel_5_and_Pixel_4a_5G.jpg'
+    },
+
+    // --- EPIC ---
+    {
+        id: 200,
+        name: 'iPhone 13 Pro Max',
+        desc: 'Почти как новый, один владелец, без сколов.',
+        price: 6500,
+        income: 85,
+        rarity: 'epic',
+        icon: '📳',
+        img: 'https://upload.wikimedia.org/wikipedia/commons/8/8c/IPhone_13_Pro_vector.svg'
+    },
+    {
+        id: 201,
+        name: 'iPhone 15 Pro',
+        desc: 'Титановый корпус, минимальные следы использования.',
+        price: 8800,
+        income: 110,
+        rarity: 'epic',
+        icon: '🍎',
+        img: 'https://upload.wikimedia.org/wikipedia/commons/c/ca/IPhone_15_Pro_%26_iPhone_15_Pro_Max.jpg'
+    },
+    {
+        id: 202,
+        name: 'Samsung Galaxy S23 Ultra',
+        desc: 'Топовый флагман, мощная камера, аккуратный владелец.',
+        price: 9000,
+        income: 115,
+        rarity: 'epic',
+        icon: '📡',
+        img: 'https://upload.wikimedia.org/wikipedia/commons/9/9e/Samsung_Galaxy_S23_Ultra.png'
+    },
+    {
+        id: 203,
+        name: 'Google Pixel 8 Pro',
+        desc: 'Новая камера с ИИ, полный комплект.',
+        price: 9200,
+        income: 118,
+        rarity: 'epic',
+        icon: '🤖',
+        img: 'https://upload.wikimedia.org/wikipedia/commons/a/a5/Google_Pixel_8_Pro.png'
+    },
+    {
+        id: 204,
+        name: 'Samsung Galaxy Z Flip',
+        desc: 'Складной экран, видимый сгиб, но работает идеально.',
+        price: 7800,
+        income: 95,
+        rarity: 'epic',
+        icon: '📂',
+        img: 'https://upload.wikimedia.org/wikipedia/commons/2/2b/Samsung_Galaxy_Z_Flip.png'
+    },
+
+    // --- LEGENDARY ---
+    {
+        id: 300,
+        name: 'Золотой Vertu',
+        desc: 'Премиальный телефон, инкрустация, комплект с коробкой.',
         price: 30000,
         income: 650,
-        rarity: "legendary",
-        icon: "💎",
-        img: "https://upload.wikimedia.org/wikipedia/commons/8/88/Vertu_mobile.jpg"
+        rarity: 'legendary',
+        icon: '💎',
+        img: 'https://upload.wikimedia.org/wikipedia/commons/8/88/Vertu_mobile.jpg'
+    },
+    {
+        id: 301,
+        name: 'iPhone 1 (2G)',
+        desc: 'Коллекционный экземпляр, первая модель iPhone.',
+        price: 45000,
+        income: 800,
+        rarity: 'legendary',
+        icon: '📼',
+        img: 'https://upload.wikimedia.org/wikipedia/commons/2/28/IPhone_2G_PSD.png'
+    },
+    {
+        id: 302,
+        name: 'Nokia N-Gage',
+        desc: 'Геймерский кирпич, редкость для коллекционеров.',
+        price: 20000,
+        income: 420,
+        rarity: 'legendary',
+        icon: '🎮',
+        img: 'https://upload.wikimedia.org/wikipedia/commons/b/bb/Nokia-NGage-QD.jpg'
+    },
+    {
+        id: 303,
+        name: 'Motorola RAZR V3',
+        desc: 'Культовая раскладушка, состояние близко к идеальному.',
+        price: 18000,
+        income: 360,
+        rarity: 'legendary',
+        icon: '📞',
+        img: 'https://upload.wikimedia.org/wikipedia/commons/8/8b/Motorola_RAZR_V3.jpg'
+    },
+
+    // --- SECRET (0.01%) ---
+    {
+        id: 999,
+        name: 'Xiaomi Mi Mix Alpha',
+        desc: 'Супер-редкий концепт с экраном вокруг корпуса. Секретный дроп.',
+        price: 150000,
+        income: 2500,
+        rarity: 'legendary',
+        icon: '🧪',
+        img: 'https://upload.wikimedia.org/wikipedia/commons/0/0a/Xiaomi_Mi_Mix_Alpha.jpg'
     }
 ];
 
@@ -156,10 +475,12 @@ const caseCostHintEl = document.getElementById('case-cost-hint');
 const caseResultEl = document.getElementById('case-result');
 const rouletteEl = document.getElementById('roulette');
 const rouletteTrackEl = document.getElementById('roulette-track');
+const langSelectEl = document.getElementById('lang-select');
+const claimDropBtn = document.getElementById('claim-drop-btn');
+const autoDropTextEl = document.getElementById('auto-drop-text');
 
-const moneyFmt = new Intl.NumberFormat('ru-RU');
 function formatMoney(n) {
-    return moneyFmt.format(Math.floor(Number(n) || 0));
+    return numberFmt.format(Math.floor(Number(n) || 0));
 }
 
 function clamp(n, min, max) {
@@ -231,35 +552,8 @@ function getIncomePerSecond() {
     return income;
 }
 
-const upgradesDB = [
-    {
-        id: 'clickPower',
-        title: 'Усилитель тапа',
-        desc: 'Увеличивает доход за тап на +1 за уровень.',
-        key: 'clickPowerLevel',
-        baseCost: 200,
-        costMult: 1.6,
-        maxLevel: 200
-    },
-    {
-        id: 'crit',
-        title: 'Крит-тап',
-        desc: 'Шанс крит-тапа (x5) +2% за уровень (до 20%).',
-        key: 'critLevel',
-        baseCost: 500,
-        costMult: 1.7,
-        maxLevel: 10
-    },
-    {
-        id: 'autoTap',
-        title: 'Авто-тап',
-        desc: 'Авто-тапов в секунду +1 за уровень.',
-        key: 'autoTapLevel',
-        baseCost: 800,
-        costMult: 1.8,
-        maxLevel: 20
-    }
-];
+// Апгрейды кликов больше не используются, поэтому список оставляем пустым
+const upgradesDB = [];
 
 function getUpgradeCost(u) {
     const lvl = getUpgradeLevel(u.key);
@@ -316,7 +610,7 @@ function renderUpgrades() {
         btn.className = 'buy-btn';
         btn.dataset.upgradeId = u.id;
         btn.disabled = isMax || gameData.balance < cost;
-        btn.textContent = isMax ? 'Куплено' : `${formatMoney(cost)} ₽`;
+        btn.textContent = isMax ? (currentLang === 'en' ? 'Owned' : 'Куплено') : `${formatMoney(cost)} ₽`;
 
         row.appendChild(info);
         row.appendChild(btn);
@@ -334,8 +628,39 @@ if (upgradesListEl) {
     });
 }
 
+// --- BALANCE COUNTER ANIMATION ---
+let balanceAnimRaf = 0;
+let shownBalance = Math.floor(Number(gameData.balance) || 0);
+
+function easeOutCubic(x) {
+    return 1 - Math.pow(1 - x, 3);
+}
+
+function animateBalanceTo(target) {
+    if (!balanceEl) return;
+    const to = Math.floor(Number(target) || 0);
+    const from = Math.floor(Number(shownBalance) || 0);
+    if (from === to) {
+        balanceEl.innerText = formatMoney(to);
+        return;
+    }
+
+    if (balanceAnimRaf) cancelAnimationFrame(balanceAnimRaf);
+    const start = performance.now();
+    const duration = 420;
+
+    const tick = (now) => {
+        const p = Math.min(1, (now - start) / duration);
+        const v = Math.floor(from + (to - from) * easeOutCubic(p));
+        shownBalance = v;
+        balanceEl.innerText = formatMoney(v);
+        if (p < 1) balanceAnimRaf = requestAnimationFrame(tick);
+    };
+    balanceAnimRaf = requestAnimationFrame(tick);
+}
+
 function updateUI() {
-    balanceEl.innerText = formatMoney(gameData.balance);
+    animateBalanceTo(gameData.balance);
     incomeEl.innerText = formatMoney(getIncomePerSecond());
     scheduleSave();
     updateDailyUI();
@@ -408,10 +733,10 @@ function updateDailyUI() {
     const rem = getDailyRemainingMs();
     if (rem === 0) {
         dailyBtn.disabled = false;
-        dailyHintEl.textContent = `Доступно: +${formatMoney(getDailyBonusAmount())} ₽`;
+        dailyHintEl.textContent = t('dailyAvailable', formatMoney(getDailyBonusAmount()));
     } else {
         dailyBtn.disabled = true;
-        dailyHintEl.textContent = `Можно через ${formatTime(rem)}`;
+        dailyHintEl.textContent = t('dailyIn', formatTime(rem));
     }
 }
 
@@ -438,42 +763,18 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
     });
 });
 
-// --- МЕХАНИКА КЛИКЕРА ---
-const clicker = document.getElementById('clicker');
-clicker.addEventListener('click', (e) => {
-    const base = getClickPower();
-    const isCrit = Math.random() < getCritChance();
-    const gain = isCrit ? base * getCritMultiplier() : base;
-
-    gameData.balance += gain;
-    updateUI();
-
-    // Анимация вылетающих цифр
-    const floatTxt = document.createElement('div');
-    floatTxt.classList.add('floating-text');
-    floatTxt.innerText = `+${gain}${isCrit ? '!' : ''}`;
-    
-    // Позиция клика
-    const rect = clicker.getBoundingClientRect();
-    floatTxt.style.left = `${e.clientX - rect.left}px`;
-    floatTxt.style.top = `${e.clientY - rect.top}px`;
-    
-    clicker.appendChild(floatTxt);
-    
-    // Удаляем элемент после анимации
-    setTimeout(() => floatTxt.remove(), 1000);
-});
+// --- МЕХАНИКА КЛИКЕРА УБРАНА --- (клики больше не дают телефоны/баланс)
 
 // --- МЕХАНИКА АВИТО (Генератор рынка) ---
 const rarityWeights = {
-    common: 70,
+    common: 55,
     rare: 25,
+    epic: 15,
     legendary: 5
 };
 
 // --- GACHA / КЕЙСЫ ---
 function getCaseCost() {
-    // базовая цена + лёгкое масштабирование от прогресса (кол-ва кейсов)
     const opened = Math.max(0, Math.floor(Number(gameData?.stats?.casesOpened) || 0));
     return Math.floor(500 * Math.pow(1.08, Math.min(opened, 60)));
 }
@@ -482,6 +783,7 @@ function pickRarityByChance() {
     const r = Math.random() * 100;
     if (r < rarityWeights.common) return 'common';
     if (r < rarityWeights.common + rarityWeights.rare) return 'rare';
+    if (r < rarityWeights.common + rarityWeights.rare + rarityWeights.epic) return 'epic';
     return 'legendary';
 }
 
@@ -505,19 +807,22 @@ function renderCaseResult(phone, rarity) {
     if (!phone) {
         const empty = document.createElement('div');
         empty.className = 'case-empty';
-        empty.textContent = 'Не удалось открыть кейс. Попробуй ещё раз.';
+        empty.textContent = t('caseFailed');
         caseResultEl.appendChild(empty);
         return;
     }
 
     const titleWrap = document.createElement('div');
     const title = document.createElement('div');
-    title.className = `case-win-title rarity-${rarity}`;
-    title.textContent = `Выпало: ${phone.name}`;
+    const rarityClass = rarity || phone.rarity;
+    title.className = `case-win-title rarity-${rarityClass}`;
+    title.textContent = t('caseWin', phone.name);
 
     const sub = document.createElement('div');
     sub.className = 'hint';
-    sub.textContent = `Редкость: ${rarity === 'common' ? 'обычный' : rarity === 'rare' ? 'редкий' : 'легендарный'} • +${formatMoney(phone.income)} ₽/сек`;
+    const rarityKey = rarity || phone.rarity;
+    const rarityTxt = t(`rarity_${rarityKey}`);
+    sub.textContent = t('caseRarityIncome', rarityTxt, formatMoney(phone.income));
 
     titleWrap.appendChild(title);
     titleWrap.appendChild(sub);
@@ -527,17 +832,10 @@ function renderCaseResult(phone, rarity) {
 }
 
 function updateCasesUI() {
-    if (!openCaseBtn || !caseCostHintEl || !caseResultEl) return;
+    if (!openCaseBtn || !caseCostHintEl) return;
     const cost = getCaseCost();
-    caseCostHintEl.textContent = `Цена: ${formatMoney(cost)} ₽`;
-    openCaseBtn.disabled = gameData.balance < cost || isRouletteSpinning;
-
-    if (caseResultEl.childNodes.length === 0) {
-        const empty = document.createElement('div');
-        empty.className = 'case-empty';
-        empty.textContent = 'Нажми «Открыть кейс», чтобы получить телефон.';
-        caseResultEl.appendChild(empty);
-    }
+    caseCostHintEl.textContent = t('casePrice', formatMoney(cost));
+    openCaseBtn.disabled = isRouletteSpinning || gameData.balance < cost;
 }
 
 let isRouletteSpinning = false;
@@ -553,6 +851,7 @@ function getRoulettePoolsByRarity() {
     const pools = {
         common: phonesDB.filter(p => p.rarity === 'common'),
         rare: phonesDB.filter(p => p.rarity === 'rare'),
+        epic: phonesDB.filter(p => p.rarity === 'epic'),
         legendary: phonesDB.filter(p => p.rarity === 'legendary')
     };
     return pools;
@@ -642,9 +941,12 @@ function spinRouletteAndGrant(winPhone, winRarity) {
 }
 
 function openCase() {
-    const cost = getCaseCost();
     if (isRouletteSpinning) return;
-    if (gameData.balance < cost) return;
+    const cost = getCaseCost();
+    if (gameData.balance < cost) {
+        alert(t('notEnough'));
+        return;
+    }
 
     const rarity = pickRarityByChance();
     const phone = pickPhoneByRarity(rarity);
@@ -680,6 +982,86 @@ function pickWeightedPhone() {
     return weighted[weighted.length - 1].p;
 }
 
+// --- АВТОМАТИЧЕСКИЙ ДРОП ТЕЛЕФОНОВ (GACHA, раз в 3 минуты) ---
+const AUTO_DROP_INTERVAL_MS = 3 * 60 * 1000;
+
+function ensureNextAutoDrop() {
+    if (!Number.isFinite(Number(gameData.nextAutoDropAt))) {
+        gameData.nextAutoDropAt = Date.now() + AUTO_DROP_INTERVAL_MS;
+    }
+}
+
+function rollAutoDropPhone() {
+    // 0.01% шанс секретного Xiaomi Mi Mix Alpha
+    const secretPhone = phonesDB.find(p => p.id === 999);
+    if (secretPhone && Math.random() < 0.0001) {
+        return { id: secretPhone.id, rarity: 'secret' };
+    }
+
+    const rarity = pickRarityByChance();
+    const phone = pickPhoneByRarity(rarity);
+    if (!phone) return null;
+    return { id: phone.id, rarity };
+}
+
+function isAutoDropReady() {
+    if (gameData.pendingDrop && gameData.pendingDrop.id) return true;
+    ensureNextAutoDrop();
+    return Date.now() >= gameData.nextAutoDropAt;
+}
+
+function updateAutoDropLogic() {
+    ensureNextAutoDrop();
+    if (gameData.pendingDrop && gameData.pendingDrop.id) return;
+    if (Date.now() < gameData.nextAutoDropAt) return;
+
+    const drop = rollAutoDropPhone();
+    if (!drop) {
+        // если по какой-то причине не смогли выбрать телефон — сдвигаем таймер
+        gameData.nextAutoDropAt = Date.now() + AUTO_DROP_INTERVAL_MS;
+        return;
+    }
+
+    gameData.pendingDrop = drop;
+    gameData.nextAutoDropAt = Date.now() + AUTO_DROP_INTERVAL_MS;
+}
+
+function updateAutoDropUI() {
+    const timerEl = document.getElementById('auto-drop-timer');
+    if (!timerEl) return;
+
+    if (gameData.pendingDrop && gameData.pendingDrop.id) {
+        timerEl.textContent = t('autoDropReady');
+        if (claimDropBtn) claimDropBtn.disabled = false;
+        if (autoDropTextEl) {
+            const phone = phonesDB.find(p => p.id === gameData.pendingDrop.id);
+            autoDropTextEl.textContent = phone ? t('caseWin', phone.name) : t('autoDropReady');
+        }
+        return;
+    }
+
+    ensureNextAutoDrop();
+    const remaining = Math.max(0, gameData.nextAutoDropAt - Date.now());
+    timerEl.textContent = t('autoDropTimer', formatTime(remaining));
+    if (claimDropBtn) claimDropBtn.disabled = true;
+    if (autoDropTextEl) autoDropTextEl.textContent = t('caseIntro');
+}
+
+function claimAutoDrop() {
+    const drop = gameData.pendingDrop;
+    if (!drop || !drop.id) return;
+    const phone = phonesDB.find(p => p.id === drop.id);
+    if (!phone) return;
+    gameData.pendingDrop = null;
+    spinRouletteAndGrant(phone, drop.rarity || phone.rarity);
+}
+
+if (claimDropBtn) {
+    claimDropBtn.addEventListener('click', () => {
+        claimAutoDrop();
+    });
+}
+
 let currentMarket = [];
 
 function buildMarketLots(count = 3) {
@@ -709,14 +1091,19 @@ function renderMarket() {
         title.appendChild(document.createTextNode(` ${phone.name}`));
 
         const p1 = document.createElement('p');
-        p1.textContent = `Доход: +${formatMoney(phone.income)} ₽/сек`;
+        p1.textContent = t('incomeLine', formatMoney(phone.income));
 
         const p2 = document.createElement('p');
-        p2.textContent = 'Состояние: Б/У';
+        const condition = phone.desc || t('marketUsed');
+        p2.textContent = `${t('marketUsed')}: ${condition}`;
+
+        const p3 = document.createElement('p');
+        p3.textContent = `${formatMoney(phone.price)} ₽`;
 
         info.appendChild(title);
         info.appendChild(p1);
         info.appendChild(p2);
+        info.appendChild(p3);
 
         const price = getMarketPrice(phone);
 
@@ -762,7 +1149,7 @@ function buyPhone(id) {
         generateMarket(); 
         renderInventory();
     } else {
-        alert("Не хватает рублей!");
+        alert(t('notEnough'));
     }
 }
 
@@ -772,7 +1159,7 @@ function renderInventory() {
     invList.innerHTML = '';
     
     if (gameData.inventory.length === 0) {
-        invList.innerHTML = '<p style="text-align:center; color:gray;">У вас пока нет ферм.</p>';
+        invList.innerHTML = `<p style="text-align:center; color:gray;">${t('invEmpty')}</p>`;
         return;
     }
 
@@ -797,7 +1184,7 @@ function renderInventory() {
         title.appendChild(qty);
 
         const p = document.createElement('p');
-        p.textContent = `Приносит: +${formatMoney(phone.income * entry.qty)} ₽/сек`;
+        p.textContent = t('farmIncomeLine', formatMoney(phone.income * entry.qty));
 
         info.appendChild(title);
         info.appendChild(p);
@@ -809,7 +1196,7 @@ function renderInventory() {
         sellBtn.type = 'button';
         sellBtn.className = 'sell-btn';
         sellBtn.dataset.sellId = String(phone.id);
-        sellBtn.textContent = `Продать (${formatMoney(getSellPrice(phone))} ₽)`;
+        sellBtn.textContent = t('sell', formatMoney(getSellPrice(phone)));
 
         badge.appendChild(sellBtn);
 
@@ -886,18 +1273,175 @@ function getMarketPrice(phone) {
     return Math.max(1, Math.floor(base * (1 - ev.discountPct)));
 }
 
-// --- ИГРОВОЙ ЦИКЛ (Пассивный доход) ---
+// --- ТЕМЫ ОФОРМЛЕНИЯ ---
+const THEME_KEY = 'phoneGetTheme';
+
+const THEMES = {
+    light: {
+        '--bg-color': '#f5f7fb',
+        '--bg-accent': '#ffffff',
+        '--card-bg': '#ffffff',
+        '--accent-color': '#3b82f6',
+        '--accent-soft': 'rgba(59,130,246,0.12)',
+        '--text-color': '#111827'
+    },
+    dark: {
+        '--bg-color': '#050816',
+        '--bg-accent': '#020617',
+        '--card-bg': '#111827',
+        '--accent-color': '#22d3ee',
+        '--accent-soft': 'rgba(34,211,238,0.15)',
+        '--text-color': '#e5e7eb'
+    },
+    red: {
+        '--bg-color': '#1f0a0a',
+        '--bg-accent': '#2c0d0d',
+        '--card-bg': '#3f0f12',
+        '--accent-color': '#ef4444',
+        '--accent-soft': 'rgba(248,113,113,0.16)',
+        '--text-color': '#fee2e2'
+    },
+    green: {
+        '--bg-color': '#022c22',
+        '--bg-accent': '#064e3b',
+        '--card-bg': '#064e3b',
+        '--accent-color': '#22c55e',
+        '--accent-soft': 'rgba(74,222,128,0.18)',
+        '--text-color': '#dcfce7'
+    },
+    blue: {
+        '--bg-color': '#020617',
+        '--bg-accent': '#0b1120',
+        '--card-bg': '#0f172a',
+        '--accent-color': '#3b82f6',
+        '--accent-soft': 'rgba(59,130,246,0.18)',
+        '--text-color': '#e5f0ff'
+    }
+};
+
+function applyTheme(themeId) {
+    const theme = THEMES[themeId] || THEMES.light;
+    const root = document.documentElement;
+    Object.entries(theme).forEach(([key, value]) => {
+        root.style.setProperty(key, value);
+    });
+    root.setAttribute('data-theme', themeId);
+    gameData.theme = themeId;
+    try {
+        localStorage.setItem(THEME_KEY, themeId);
+    } catch {
+        // no-op
+    }
+    scheduleSave();
+}
+
+function initTheme() {
+    let theme = gameData.theme;
+    if (!theme) {
+        const stored = localStorage.getItem(THEME_KEY);
+        theme = stored || 'light';
+        gameData.theme = theme;
+    }
+    applyTheme(theme);
+    const select = document.getElementById('theme-select');
+    if (select) {
+        select.value = theme;
+        select.addEventListener('change', (e) => {
+            const val = e.target.value;
+            if (THEMES[val]) applyTheme(val);
+        });
+    }
+}
+
+// --- ПОГОДНЫЕ ЭФФЕКТЫ ---
+function setWeather(weather) {
+    const root = document.documentElement;
+    root.setAttribute('data-weather', weather);
+    const layer = document.getElementById('weather-layer');
+    if (!layer) return;
+    layer.innerHTML = '';
+
+    const prefersReducedMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (prefersReducedMotion) return;
+
+    if (weather === 'rain') {
+        for (let i = 0; i < 120; i++) {
+            const drop = document.createElement('div');
+            drop.className = 'weather-drop rain';
+            drop.style.left = `${Math.random() * 100}%`;
+            drop.style.animationDelay = `${Math.random() * 4}s`;
+            layer.appendChild(drop);
+        }
+    } else if (weather === 'snow') {
+        for (let i = 0; i < 80; i++) {
+            const flake = document.createElement('div');
+            flake.className = 'weather-drop snow';
+            flake.style.left = `${Math.random() * 100}%`;
+            flake.style.animationDelay = `${Math.random() * 6}s`;
+            layer.appendChild(flake);
+        }
+    } else if (weather === 'fog') {
+        for (let i = 0; i < 6; i++) {
+            const fog = document.createElement('div');
+            fog.className = 'weather-fog';
+            fog.style.left = `${Math.random() * 100}%`;
+            fog.style.animationDelay = `${Math.random() * 10}s`;
+            layer.appendChild(fog);
+        }
+    } else if (weather === 'sun') {
+        const sun = document.createElement('div');
+        sun.className = 'weather-sun';
+        layer.appendChild(sun);
+    }
+}
+
+function chooseWeatherByTime() {
+    const hour = new Date().getHours();
+    const roll = Math.random();
+    if (hour >= 7 && hour < 11) {
+        return roll < 0.6 ? 'sun' : 'fog';
+    }
+    if (hour >= 11 && hour < 18) {
+        if (roll < 0.5) return 'sun';
+        if (roll < 0.75) return 'rain';
+        return 'fog';
+    }
+    if (hour >= 18 && hour < 23) {
+        if (roll < 0.4) return 'rain';
+        if (roll < 0.8) return 'fog';
+        return 'snow';
+    }
+    return roll < 0.5 ? 'snow' : 'fog';
+}
+
+function initWeatherSystem() {
+    setWeather(chooseWeatherByTime());
+    setInterval(() => {
+        setWeather(chooseWeatherByTime());
+    }, 5 * 60 * 1000);
+}
+
+// --- ИГРОВОЙ ЦИКЛ (Пассивный доход + авто-дроп) ---
 setInterval(() => {
     gameData.balance += getIncomePerSecond();
+    updateAutoDropLogic();
     updateUI();
     renderUpgrades();
     renderMarket(); // обновляем disabled на кнопках
+    updateAutoDropUI();
 }, 1000);
 
 // Обновляем рынок каждые 15 секунд
 setInterval(generateMarket, 15000);
 
 // Инициализация при запуске
+applyI18n();
+if (langSelectEl) {
+    langSelectEl.value = currentLang;
+    langSelectEl.addEventListener('change', (e) => setLang(e.target.value));
+}
+initTheme();
+initWeatherSystem();
 updateUI();
 renderUpgrades();
 generateMarket();

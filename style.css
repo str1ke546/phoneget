@@ -1,14 +1,20 @@
 :root {
-    --tg-bg: #1c1c1d;
-    --tg-panel: #2c2c2e;
-    --tg-blue: #0a84ff;
-    --tg-text: #ffffff;
+    --bg-color: #f5f7fb;
+    --bg-accent: #ffffff;
+    --card-bg: #ffffff;
+    --accent-color: #3b82f6;
+    --accent-soft: rgba(59,130,246,0.12);
+    --text-color: #111827;
+    --tg-bg: var(--bg-color);
+    --tg-panel: var(--card-bg);
+    --tg-blue: var(--accent-color);
+    --tg-text: var(--text-color);
     --tg-hint: #ebebf599;
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; }
 
-body { background-color: #000; display: flex; justify-content: center; align-items: center; height: 100vh; color: var(--tg-text); overflow: hidden; }
+body { background-color: var(--bg-color); display: flex; justify-content: center; align-items: center; height: 100vh; color: var(--tg-text); overflow: hidden; }
 
 /* Имитация экрана телефона */
 .app-container {
@@ -23,6 +29,15 @@ header { background-color: var(--tg-panel); padding: 20px; border-bottom: 1px so
 h1 { font-size: 20px; margin-bottom: 5px; }
 .badge { background: var(--tg-blue); color: #fff; font-size: 12px; padding: 2px 6px; border-radius: 10px; }
 .income-text { color: #34c759; font-size: 14px; font-weight: bold; }
+.lang-switch { margin-left: auto; }
+.lang-select {
+    background: #3a3a3c;
+    color: var(--tg-text);
+    border: 1px solid #4a4a4c;
+    padding: 8px 10px;
+    border-radius: 12px;
+    font-weight: 800;
+}
 
 /* Табы */
 .tabs { display: flex; background: var(--tg-panel); }
@@ -33,13 +48,31 @@ main { flex: 1; overflow-y: auto; padding: 20px; }
 .screen.hidden { display: none; }
 
 /* Кликер */
-.clicker-area { min-height: 320px; display: flex; flex-direction: column; justify-content: center; align-items: center; user-select: none; cursor: pointer; touch-action: manipulation; }
+.clicker-area { position: relative; min-height: 320px; display: flex; flex-direction: column; justify-content: center; align-items: center; user-select: none; cursor: pointer; touch-action: manipulation; }
 .main-phone { font-size: 120px; transition: transform 0.1s; filter: drop-shadow(0 0 20px rgba(10, 132, 255, 0.4)); }
 .main-phone:active { transform: scale(0.9); }
 
 /* Вылетающие цифры при клике */
 .floating-text { position: absolute; color: #fff; font-size: 24px; font-weight: bold; pointer-events: none; animation: floatUp 1s ease-out forwards; text-shadow: 0 2px 4px rgba(0,0,0,0.5); }
 @keyframes floatUp { 0% { opacity: 1; transform: translateY(0) scale(1); } 100% { opacity: 0; transform: translateY(-100px) scale(1.5); } }
+
+/* Искры */
+.spark {
+    position: absolute;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: rgba(10, 132, 255, 0.95);
+    box-shadow: 0 0 10px rgba(10, 132, 255, 0.55);
+    pointer-events: none;
+    animation: sparkFly 520ms ease-out forwards;
+    transform: translate3d(0,0,0);
+}
+
+@keyframes sparkFly {
+    0% { opacity: 1; transform: translate3d(0, 0, 0) scale(1); }
+    100% { opacity: 0; transform: translate3d(var(--dx), var(--dy), 0) scale(0.2); }
+}
 
 /* Карточки рынка и инвентаря */
 .grid-list { display: grid; grid-template-columns: 1fr; gap: 15px; margin-top: 15px; }
@@ -88,6 +121,7 @@ main { flex: 1; overflow-y: auto; padding: 20px; }
     background: var(--tg-panel);
     border: 1px solid #38383a;
 }
+.panel:first-of-type { margin-top: 0; }
 
 .panel-title {
     font-size: 16px;
@@ -175,7 +209,7 @@ main { flex: 1; overflow-y: auto; padding: 20px; }
     min-height: 56px;
     display: flex;
     align-items: center;
-    justify-content: flex-start;
+    justify-content: space-between;
     gap: 10px;
 }
 
@@ -191,7 +225,141 @@ main { flex: 1; overflow-y: auto; padding: 20px; }
 
 .rarity-common { color: var(--tg-text); }
 .rarity-rare { color: #af52de; }
+.rarity-epic { color: #a855f7; }
 .rarity-legendary { color: #ffcc00; }
+.rarity-secret { color: #f43f5e; text-shadow: 0 0 10px rgba(244,63,94,0.4); }
+
+.weather-layer {
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 0;
+    overflow: hidden;
+}
+
+.app-container { z-index: 1; }
+
+.weather-drop {
+    position: absolute;
+    top: -10%;
+    opacity: 0.7;
+}
+
+.weather-drop.rain {
+    width: 2px;
+    height: 18px;
+    background: linear-gradient(180deg, rgba(148,163,184,0.2), rgba(148,163,184,0.85));
+    animation: rainFall 1.4s linear infinite;
+}
+
+.weather-drop.snow {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.85);
+    animation: snowFall 5.5s linear infinite;
+}
+
+.weather-fog {
+    position: absolute;
+    top: 15%;
+    width: 220px;
+    height: 100px;
+    border-radius: 999px;
+    background: radial-gradient(circle, rgba(255,255,255,0.15), rgba(255,255,255,0.02));
+    animation: fogMove 14s ease-in-out infinite;
+}
+
+.weather-sun {
+    position: absolute;
+    top: 8%;
+    right: 10%;
+    width: 120px;
+    height: 120px;
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(255,220,120,0.55), rgba(255,220,120,0.03));
+}
+
+.roulette {
+    margin-top: 14px;
+    border-radius: 14px;
+    background: #161617;
+    border: 1px solid #38383a;
+    overflow: hidden;
+    position: relative;
+    height: 86px;
+}
+
+.roulette-window {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 50%;
+    width: 96px;
+    transform: translateX(-50%);
+    border-left: 2px solid rgba(255,255,255,0.10);
+    border-right: 2px solid rgba(255,255,255,0.10);
+    box-shadow: inset 0 0 0 9999px rgba(10,132,255,0.06);
+    pointer-events: none;
+}
+
+.roulette-track {
+    height: 100%;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px;
+    will-change: transform;
+    transform: translate3d(0,0,0);
+}
+
+.roulette-item {
+    width: 86px;
+    height: 60px;
+    flex: 0 0 auto;
+    border-radius: 12px;
+    background: #242426;
+    border: 1px solid #38383a;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 8px;
+}
+
+.roulette-item.common { border-left: 4px solid var(--tg-blue); }
+.roulette-item.rare { border-left: 4px solid #af52de; }
+.roulette-item.epic { border-left: 4px solid #a855f7; }
+.roulette-item.legendary { border-left: 4px solid #ffcc00; }
+.roulette-item.secret { border-left: 4px solid #f43f5e; }
+
+.roulette-item .phone-img,
+.roulette-item .phone-emoji {
+    margin-right: 0;
+    vertical-align: 0;
+    width: 44px;
+    height: 44px;
+    border-radius: 12px;
+}
+
+.roulette-spinning .roulette-track { transition: transform 3.2s cubic-bezier(.08,.82,.16,1); }
+
+@keyframes rainFall {
+    0% { transform: translateY(-10vh); opacity: 0; }
+    10% { opacity: 0.8; }
+    100% { transform: translateY(110vh); opacity: 0; }
+}
+
+@keyframes snowFall {
+    0% { transform: translateY(-10vh) translateX(0); opacity: 0; }
+    10% { opacity: 0.9; }
+    100% { transform: translateY(110vh) translateX(25px); opacity: 0; }
+}
+
+@keyframes fogMove {
+    0% { transform: translateX(-20px); opacity: 0.2; }
+    50% { transform: translateX(20px); opacity: 0.45; }
+    100% { transform: translateX(-20px); opacity: 0.2; }
+}
 
 @media (prefers-reduced-motion: reduce) {
     .floating-text { animation: none; opacity: 0; }
@@ -199,4 +367,5 @@ main { flex: 1; overflow-y: auto; padding: 20px; }
     .main-phone { transition: none; }
     .action-btn { transition: none; }
     .sell-btn { transition: none; }
+    .roulette-spinning .roulette-track { transition: none; }
 }
